@@ -131,9 +131,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   pageMetaText: {
-    fontSize: 13,
+    fontFamily: 'ScheherazadeNew-Regular',
+    fontSize: 16,
     color: '#64748b',
-    fontWeight: '500',
   },
   mushafFrame: {
     width: '100%',
@@ -175,16 +175,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e5d1b8',
-    paddingVertical: 6,
-    marginVertical: 8,
+    paddingVertical: 4,
+    marginVertical: 6,
   },
   basmallahLineWrapper: {
     marginVertical: 6,
   },
   lineText: {
     writingDirection: 'rtl',
-    fontSize: 21,
-    lineHeight: 46,
+    fontFamily: 'ScheherazadeNew-Regular',
+    fontSize: 26,
+    lineHeight: 56,
     color: '#1e293b',
   },
   centeredText: {
@@ -194,13 +195,15 @@ const styles = StyleSheet.create({
     textAlign: 'justify',
   },
   nonAyahText: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontFamily: 'ScheherazadeNew-Bold',
+    fontSize: 26,
+    lineHeight: 52,
     color: '#0f172a',
   },
   wordText: {
-    fontSize: 21,
-    lineHeight: 46,
+    fontFamily: 'ScheherazadeNew-Regular',
+    fontSize: 26,
+    lineHeight: 56,
   },
   wordHighlighted: {
     backgroundColor: 'rgba(76, 175, 80, 0.25)',
