@@ -4,3 +4,5 @@ declare module '*.module.css' {
 }
 
 declare module '*.css';
+declare module '*.db';
+declare module '*.png';
