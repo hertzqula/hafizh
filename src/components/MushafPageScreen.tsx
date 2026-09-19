@@ -13,8 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 
-import { mockPage3Data } from '@/data/mockPage3Data';
 import { AyahToolbar } from '@/components/AyahToolbar';
+import {
+  getPageData,
+  findAyahAtCoordinates,
+} from '@/services/mushafCoordinateService';
 import {
   getSurahNameForPage,
   getJuzForPage,
@@ -99,9 +102,8 @@ export function MushafPageScreen() {
 
       const scale = displayW / 1024;
 
-      // Untuk halaman 3, gunakan data koordinat presisi
-      const isPage3 = pageNum === 3;
-      const pageData = isPage3 ? mockPage3Data : null;
+      // Dapatkan data koordinat presisi untuk halaman ini (1-604)
+      const pageData = getPageData(pageNum);
       const selectedAyah = pageData?.ayahs.find(
         (a) => a.ayahId === highlightedAyahId
       );
@@ -112,16 +114,7 @@ export function MushafPageScreen() {
         const nativeX = locationX / scale;
         const nativeY = locationY / scale;
 
-        const found = pageData.ayahs.find((ayah) =>
-          ayah.rects.some(
-            (r) =>
-              nativeX >= r.minX - 8 &&
-              nativeX <= r.maxX + 8 &&
-              nativeY >= r.minY - 6 &&
-              nativeY <= r.maxY + 6
-          )
-        );
-
+        const found = findAyahAtCoordinates(pageNum, nativeX, nativeY);
         if (found) {
           setHighlightedAyahId(found.ayahId);
         }
