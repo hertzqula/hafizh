@@ -72,11 +72,44 @@ export async function saveVoiceConfig(config: VoiceSearchConfig): Promise<void> 
   }
 }
 
+const WHISPER_HALLUCINATIONS = [
+  'اشترك',
+  'شكرا',
+  'شكراً',
+  'القناة',
+  'قناة',
+  'موسيقى',
+  'تصبحون',
+  'subtitles',
+  'thank you',
+  'watching',
+  'subscribe',
+];
+
+function isHallucination(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  if (lower.length < 3) return true;
+  for (const h of WHISPER_HALLUCINATIONS) {
+    if (lower.includes(h)) return true;
+  }
+  return false;
+}
+
 /**
  * Mentranskripsikan audio rekaman menggunakan Groq Whisper (ultra-cepat, ~200ms).
  * Menggunakan native uploadAsync dari expo-file-system untuk reliabilitas tinggi di Android.
+ * Menyertakan Quran prompt conditioning & temperature 0 untuk akurasi jarak jauh.
  */
-async function transcribeGroq(audioUri: string, apiKey: string): Promise<string> {
+async function transcribeGroq(
+  audioUri: string,
+  apiKey: string,
+  promptContext?: string
+): Promise<string> {
+  const promptText =
+    promptContext && promptContext.trim().length > 0
+      ? `تلاوة القرآن الكريم ترتيل: ${promptContext.trim().slice(0, 160)}`
+      : 'تلاوة آيات القرآن الكريم وترتيل المصحف الشريف بالتجويد';
+
   try {
     const uploadRes = await uploadAsync(
       'https://api.groq.com/openai/v1/audio/transcriptions',
@@ -93,13 +126,16 @@ async function transcribeGroq(audioUri: string, apiKey: string): Promise<string>
           model: 'whisper-large-v3-turbo',
           language: 'ar',
           response_format: 'json',
+          temperature: '0.0',
+          prompt: promptText,
         },
       }
     );
 
     if (uploadRes.status === 200) {
       const data = JSON.parse(uploadRes.body);
-      return data.text || '';
+      const rawText = data.text || '';
+      return isHallucination(rawText) ? '' : rawText;
     }
 
     if (uploadRes.status === 401) {
@@ -123,6 +159,8 @@ async function transcribeGroq(audioUri: string, apiKey: string): Promise<string>
   formData.append('model', 'whisper-large-v3-turbo');
   formData.append('language', 'ar');
   formData.append('response_format', 'json');
+  formData.append('temperature', '0.0');
+  formData.append('prompt', promptText);
 
   const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
@@ -141,7 +179,8 @@ async function transcribeGroq(audioUri: string, apiKey: string): Promise<string>
   }
 
   const data = await response.json();
-  return data.text || '';
+  const rawText = data.text || '';
+  return isHallucination(rawText) ? '' : rawText;
 }
 
 /**
@@ -181,7 +220,11 @@ async function transcribeHuggingFace(audioUri: string, apiKey?: string): Promise
  */
 export async function searchAyahByAudio(
   audioUri: string,
-  customConfig?: VoiceSearchConfig
+  customConfig?: VoiceSearchConfig,
+  options?: {
+    promptContext?: string;
+    preferredPage?: number;
+  }
 ): Promise<VoiceSearchResult> {
   try {
     const config = customConfig || (await loadVoiceConfig());
@@ -195,7 +238,7 @@ export async function searchAyahByAudio(
 
     let transcribedText = '';
     if (config.provider === 'groq' && config.apiKey) {
-      transcribedText = await transcribeGroq(audioUri, config.apiKey);
+      transcribedText = await transcribeGroq(audioUri, config.apiKey, options?.promptContext);
     } else {
       transcribedText = await transcribeHuggingFace(audioUri, config.apiKey);
     }
@@ -207,7 +250,7 @@ export async function searchAyahByAudio(
       };
     }
 
-    const match = matchAyahFromText(transcribedText);
+    const match = matchAyahFromText(transcribedText, options?.preferredPage);
     if (!match) {
       return {
         success: false,
