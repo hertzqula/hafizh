@@ -116,14 +116,33 @@ export const SURAH_NAMES: string[] = [
   'الناس',
 ];
 
+const PAGE_SURAH_TRANSITIONS: [number, number][] = [
+  [1, 1], [2, 2], [50, 3], [77, 4], [107, 5], [128, 6], [151, 7], [177, 8], [187, 9], [208, 10],
+  [222, 11], [236, 12], [249, 13], [256, 14], [262, 15], [268, 16], [282, 17], [294, 18], [305, 19], [313, 20],
+  [322, 21], [332, 22], [342, 23], [350, 24], [360, 25], [367, 26], [377, 27], [386, 28], [397, 29], [405, 30],
+  [411, 31], [415, 32], [418, 33], [428, 34], [435, 35], [441, 36], [446, 37], [453, 38], [459, 39], [468, 40],
+  [477, 41], [483, 42], [490, 43], [496, 44], [499, 45], [503, 46], [507, 47], [511, 48], [516, 49], [518, 50],
+  [521, 51], [524, 52], [526, 53], [529, 54], [532, 55], [535, 56], [538, 57], [542, 58], [546, 59], [549, 60],
+  [552, 61], [553, 62], [555, 63], [556, 64], [558, 65], [560, 66], [562, 67], [565, 68], [567, 69], [569, 70],
+  [571, 71], [572, 72], [574, 73], [576, 74], [578, 75], [579, 76], [581, 77], [582, 78], [584, 79], [585, 80],
+  [586, 81], [587, 82], [588, 83], [590, 85], [591, 86], [592, 87], [593, 89], [595, 91], [596, 92], [597, 95],
+  [598, 97], [599, 98], [600, 100], [601, 103], [602, 106], [603, 109], [604, 112],
+];
+
+export function getSurahNumberForPage(page: number): number {
+  if (page <= 1) return 1;
+  for (let i = PAGE_SURAH_TRANSITIONS.length - 1; i >= 0; i--) {
+    if (page >= PAGE_SURAH_TRANSITIONS[i][0]) {
+      return PAGE_SURAH_TRANSITIONS[i][1];
+    }
+  }
+  return 1;
+}
+
 export function getSurahNameForPage(page: number): string {
-  if (page === 1) return `سُورَةُ ${SURAH_NAMES[1]}`;
-  if (page >= 2 && page <= 49) return `سُورَةُ ${SURAH_NAMES[2]}`;
-  if (page >= 50 && page <= 76) return `سُورَةُ ${SURAH_NAMES[3]}`;
-  if (page >= 77 && page <= 106) return `سُورَةُ ${SURAH_NAMES[4]}`;
-  if (page >= 107 && page <= 127) return `سُورَةُ ${SURAH_NAMES[5]}`;
-  // Default fallback
-  return 'سُورَةُ القُرْآنِ';
+  const surahNum = getSurahNumberForPage(page);
+  const name = SURAH_NAMES[surahNum];
+  return name ? `سُورَةُ ${name}` : 'سُورَةُ الفاتحة';
 }
 
 export function getJuzForPage(page: number): number {
