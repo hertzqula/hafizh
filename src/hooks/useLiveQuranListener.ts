@@ -2,37 +2,81 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   useAudioRecorder,
   AudioModule,
-  RecordingPresets,
   setAudioModeAsync,
+  RecordingOptions,
+  IOSOutputFormat,
+  AudioQuality,
 } from 'expo-audio';
+import { deleteAsync } from 'expo-file-system/legacy';
 import {
   searchAyahByAudio,
   loadVoiceConfig,
 } from '@/services/quranVoiceSearchService';
-import { matchAyahFromText, AyahMatchResult } from '@/services/quranTextMatcher';
+import {
+  matchAyahFromText,
+  getTextForPage,
+  AyahMatchResult,
+} from '@/services/quranTextMatcher';
+
+/**
+ * Konfigurasi rekaman suara yang dioptimalkan untuk Speech-to-Text Whisper:
+ * - 16kHz mono (sama persis dengan sample rate native Whisper, tanpa overhead resampling)
+ * - Bitrate 48kbps (ukuran file ~27 KB per 4.5s chunk, pengiriman 5x lebih cepat)
+ * - Android 'voice_recognition' audioSource (mengaktifkan Automatic Gain Control dari hardware HP
+ *   agar suara dari jarak jauh tetap terdengar jelas dan jernih oleh AI)
+ */
+export const VOICE_RECORDING_OPTIONS: RecordingOptions = {
+  extension: '.m4a',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 48000,
+  android: {
+    outputFormat: 'mpeg4',
+    audioEncoder: 'aac',
+    audioSource: 'voice_recognition',
+  },
+  ios: {
+    outputFormat: IOSOutputFormat.MPEG4AAC,
+    audioQuality: AudioQuality.HIGH,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: 'audio/webm',
+    bitsPerSecond: 48000,
+  },
+};
 
 interface UseLiveQuranListenerOptions {
   onAyahDetected: (match: AyahMatchResult) => void;
   onError?: (errorMsg: string) => void;
   chunkDurationMs?: number; // default 4500ms
+  currentPage?: number;
 }
 
 export function useLiveQuranListener({
   onAyahDetected,
   onError,
   chunkDurationMs = 4500,
+  currentPage,
 }: UseLiveQuranListenerOptions) {
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>('Siap');
   const [lastDetectedAyah, setLastDetectedAyah] = useState<AyahMatchResult | null>(null);
 
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
   const isActiveRef = useRef(false);
   const chunkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAnalyzingRef = useRef(false);
   const lastDetectedRef = useRef<AyahMatchResult | null>(null);
   const rollingTextRef = useRef<string>('');
+  const currentPageRef = useRef(currentPage);
+
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
 
   // Membersihkan timer saat unmount
   useEffect(() => {
@@ -50,7 +94,14 @@ export function useLiveQuranListener({
       isAnalyzingRef.current = true;
       setIsProcessing(true);
 
-      const res = await searchAyahByAudio(uri);
+      const targetPage = currentPageRef.current || lastDetectedRef.current?.pageNumber;
+      const promptContext = targetPage ? getTextForPage(targetPage) : undefined;
+
+      const res = await searchAyahByAudio(uri, undefined, {
+        promptContext,
+        preferredPage: targetPage,
+      });
+
       if (res.success && res.match) {
         lastDetectedRef.current = res.match;
         rollingTextRef.current = '';
@@ -60,7 +111,7 @@ export function useLiveQuranListener({
       } else if (res.transcription && res.transcription.trim().length > 0) {
         // Coba gabungkan dengan teks penggalan sebelumnya (rolling buffer)
         const combined = `${rollingTextRef.current} ${res.transcription}`.trim();
-        const combinedMatch = matchAyahFromText(combined);
+        const combinedMatch = matchAyahFromText(combined, targetPage);
 
         if (combinedMatch) {
           lastDetectedRef.current = combinedMatch;
@@ -84,6 +135,10 @@ export function useLiveQuranListener({
     } catch (err: any) {
       console.warn('[LiveQuranListener] Error chunk:', err?.message);
     } finally {
+      // Hapus file audio sementara dari storage HP agar tidak menumpuk
+      try {
+        await deleteAsync(uri, { idempotent: true });
+      } catch (_) {}
       isAnalyzingRef.current = false;
       setIsProcessing(false);
     }
@@ -93,8 +148,8 @@ export function useLiveQuranListener({
     if (!isActiveRef.current) return;
 
     try {
-      // 1. Siapkan dan mulai rekaman chunk
-      await audioRecorder.prepareToRecordAsync();
+      // 1. Siapkan dan mulai rekaman chunk dengan preset voice optimized
+      await audioRecorder.prepareToRecordAsync(VOICE_RECORDING_OPTIONS);
       audioRecorder.record();
       if (!lastDetectedRef.current) {
         setStatusMessage('Mendengarkan bacaan...');
@@ -149,6 +204,7 @@ export function useLiveQuranListener({
       await setAudioModeAsync({
         playsInSilentMode: true,
         allowsRecording: true,
+        interruptionMode: 'mixWithOthers',
       });
 
       isActiveRef.current = true;

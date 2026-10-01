@@ -95,6 +95,7 @@ export function MushafPageScreen() {
     statusMessage,
     toggleListening,
   } = useLiveQuranListener({
+    currentPage,
     onAyahDetected: handleAyahFound,
     onError: handleVoiceError,
   });
