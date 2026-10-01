@@ -19,6 +19,24 @@ type RawAyahRecord = [
 
 const dataset = (rawDataset as unknown) as RawAyahRecord[];
 
+// Cache teks ayat per halaman untuk Whisper context prompt
+const pageTextMap = new Map<number, string>();
+for (const [_surah, _ayah, page, text] of dataset) {
+  const existing = pageTextMap.get(page) || '';
+  if (existing.length < 200) {
+    pageTextMap.set(page, existing ? `${existing} ${text}` : text);
+  }
+}
+
+/**
+ * Mengambil penggalan teks ayat pada halaman tertentu untuk dijadikan context prompt Whisper.
+ */
+export function getTextForPage(pageNumber: number, maxChars = 160): string {
+  if (!pageNumber || pageNumber < 1 || pageNumber > 604) return '';
+  const text = pageTextMap.get(pageNumber) || '';
+  return text.slice(0, maxChars);
+}
+
 /**
  * Normalisasi teks Arab:
  * - Menghilangkan tanda harakat / tasykil
@@ -42,8 +60,12 @@ export function normalizeArabic(text: string): string {
 /**
  * Mencocokkan transkripsi ucapan pengguna dengan 6.236 ayat Al-Qur'an.
  * Mengembalikan ayat dengan skor kecocokan tertinggi.
+ * Parameter preferredPage memberikan bobot prioritas ke halaman yang sedang aktif.
  */
-export function matchAyahFromText(spokenText: string): AyahMatchResult | null {
+export function matchAyahFromText(
+  spokenText: string,
+  preferredPage?: number
+): AyahMatchResult | null {
   const normSpoken = normalizeArabic(spokenText);
   if (!normSpoken || normSpoken.length < 3) return null;
 
@@ -56,7 +78,10 @@ export function matchAyahFromText(spokenText: string): AyahMatchResult | null {
   for (const [surah, ayah, page, text] of dataset) {
     // 1. Kecocokan substring langsung
     if (text.includes(normSpoken)) {
-      const score = 100 + (normSpoken.length / text.length) * 50;
+      let score = 100 + (normSpoken.length / text.length) * 50;
+      if (preferredPage && Math.abs(page - preferredPage) <= 1) {
+        score += 25; // Bonus konteks bacaan halaman berdekatan
+      }
       if (score > maxScore) {
         maxScore = score;
         bestMatch = {
@@ -83,8 +108,11 @@ export function matchAyahFromText(spokenText: string): AyahMatchResult | null {
 
     if (matchCount >= 2 || (spokenWords.length === 1 && matchCount === 1)) {
       const ratio = matchCount / spokenWords.length;
-      if (ratio >= 0.6) {
-        const score = ratio * 70 + (matchCount / text.split(' ').length) * 30;
+      if (ratio >= 0.5) {
+        let score = ratio * 70 + (matchCount / text.split(' ').length) * 30;
+        if (preferredPage && Math.abs(page - preferredPage) <= 1) {
+          score += 25; // Bonus konteks bacaan halaman berdekatan
+        }
         if (score > maxScore) {
           maxScore = score;
           bestMatch = {
@@ -104,3 +132,4 @@ export function matchAyahFromText(spokenText: string): AyahMatchResult | null {
 
   return bestMatch;
 }
+
