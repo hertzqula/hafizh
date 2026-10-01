@@ -33,7 +33,13 @@
           "imageWidth": 76
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Izinkan Al-Furqan mengakses mikrofon untuk mengenali ayat yang Anda baca."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
