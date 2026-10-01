@@ -9,11 +9,14 @@ import {
   FlatList,
   ViewToken,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Mic, Square, Settings } from 'lucide-react-native';
 
 import { AyahToolbar } from '@/components/AyahToolbar';
+import { VoiceSettingsModal } from '@/components/VoiceSettingsModal';
+import { useLiveQuranListener } from '@/hooks/useLiveQuranListener';
+import { AyahMatchResult } from '@/services/quranTextMatcher';
 import {
   getPageData,
   findAyahAtCoordinates,
@@ -29,10 +32,13 @@ const TOTAL_PAGES = 604;
 const PAGES_DATA = Array.from({ length: TOTAL_PAGES }, (_, i) => i + 1);
 
 export function MushafPageScreen() {
+  const insets = useSafeAreaInsets();
   const [currentPage, setCurrentPage] = useState<number>(3);
   const [highlightedAyahId, setHighlightedAyahId] = useState<string | null>(null);
+  const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [availableSize, setAvailableSize] = useState<{ width: number; height: number } | null>(null);
   const flatListRef = useRef<FlatList<number>>(null);
+  const pendingHighlightAyahIdRef = useRef<string | null>(null);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -52,10 +58,46 @@ export function MushafPageScreen() {
       if (viewableItems.length > 0 && viewableItems[0].item) {
         const newPage = viewableItems[0].item as number;
         setCurrentPage(newPage);
-        setHighlightedAyahId(null);
+        if (pendingHighlightAyahIdRef.current) {
+          setHighlightedAyahId(pendingHighlightAyahIdRef.current);
+          pendingHighlightAyahIdRef.current = null;
+        } else {
+          setHighlightedAyahId(null);
+        }
       }
     }
   ).current;
+
+  const handleAyahFound = (match: AyahMatchResult) => {
+    const targetPage = match.pageNumber;
+    const targetAyahId = `${match.surahNumber}:${match.ayahNumber}`;
+
+    pendingHighlightAyahIdRef.current = targetAyahId;
+
+    if (flatListRef.current) {
+      flatListRef.current.scrollToIndex({
+        index: targetPage - 1,
+        animated: Math.abs(currentPage - targetPage) <= 10,
+      });
+    }
+
+    setCurrentPage(targetPage);
+    setHighlightedAyahId(targetAyahId);
+  };
+
+  const handleVoiceError = (msg: string) => {
+    setIsSettingsVisible(true);
+  };
+
+  const {
+    isLiveActive,
+    isProcessing,
+    statusMessage,
+    toggleListening,
+  } = useLiveQuranListener({
+    onAyahDetected: handleAyahFound,
+    onError: handleVoiceError,
+  });
 
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
@@ -237,6 +279,30 @@ export function MushafPageScreen() {
         </Text>
       </View>
 
+      {/* Realtime Live Listening Banner (Floating Pill) */}
+      {isLiveActive && (
+        <View style={styles.liveBannerContainer} pointerEvents="box-none">
+          <View style={styles.liveBanner}>
+            <View
+              style={[
+                styles.livePulseDot,
+                isProcessing && styles.livePulseDotProcessing,
+              ]}
+            />
+            <Text style={styles.liveBannerText} numberOfLines={1}>
+              {statusMessage}
+            </Text>
+            <Pressable
+              onPress={() => setIsSettingsVisible(true)}
+              style={styles.settingsIconBtn}
+              hitSlop={8}
+            >
+              <Settings size={15} color="#64748b" />
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {/* Reading Area — Swipeable FlatList Paging (RTL Inverted) */}
       <View style={styles.readingArea} onLayout={handleLayout}>
         {availableSize && availableSize.width > 0 && (
@@ -275,10 +341,49 @@ export function MushafPageScreen() {
         <Text style={styles.footerPageText}>- {toArabicDigits(currentPage)} -</Text>
       </View>
 
-      {/* Floating Toolbar saat ayat di-highlight */}
-      {highlightedAyahId !== null && (
+      {/* Floating Toolbar saat ayat di-highlight secara manual (sembunyikan saat mode menyimak aktif) */}
+      {highlightedAyahId !== null && !isLiveActive && (
         <AyahToolbar ayahId={highlightedAyahId} />
       )}
+
+      {/* Floating Bottom-Center Action Button (Tombol Menyimak Suara Realtime) */}
+      <View
+        style={[
+          styles.floatingFabContainer,
+          { bottom: Math.max(insets.bottom + 16, 26) },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Pressable
+          onPress={toggleListening}
+          onLongPress={() => setIsSettingsVisible(true)}
+          style={({ pressed }) => [
+            styles.floatingFab,
+            isLiveActive ? styles.floatingFabActive : styles.floatingFabIdle,
+            pressed && styles.floatingFabPressed,
+          ]}
+          accessibilityLabel={isLiveActive ? "Hentikan menyimak bacaan" : "Mulai menyimak bacaan Al-Qur'an"}
+        >
+          {isLiveActive ? (
+            <View style={styles.fabActiveContent}>
+              <View style={styles.fabPulseDot} />
+              <Square size={17} color="#ffffff" fill="#ffffff" />
+              <Text style={styles.fabActiveText}>Hentikan</Text>
+            </View>
+          ) : (
+            <View style={styles.fabIdleContent}>
+              <Mic size={26} color="#ffffff" />
+            </View>
+          )}
+        </Pressable>
+      </View>
+
+      {/* Modal Pengaturan Voice AI / Input API Key / Simulasi Coba Cepat */}
+      <VoiceSettingsModal
+        visible={isSettingsVisible}
+        onClose={() => setIsSettingsVisible(false)}
+        onTestAyahSelected={handleAyahFound}
+      />
     </SafeAreaView>
   );
 }
@@ -302,6 +407,109 @@ const styles = StyleSheet.create({
     fontFamily: 'ScheherazadeNew-Bold',
     fontSize: 16,
     color: '#0f172a',
+  },
+  floatingFabContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 90,
+  },
+  floatingFab: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  floatingFabIdle: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#16a34a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#ffffff',
+  },
+  floatingFabActive: {
+    height: 52,
+    paddingHorizontal: 22,
+    borderRadius: 26,
+    backgroundColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#ffffff',
+  },
+  floatingFabPressed: {
+    transform: [{ scale: 0.93 }],
+    opacity: 0.9,
+  },
+  fabActiveContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fabPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ffffff',
+  },
+  fabActiveText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  fabIdleContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveBannerContainer: {
+    position: 'absolute',
+    top: 56,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    alignItems: 'center',
+  },
+  liveBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  livePulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#dc2626',
+  },
+  livePulseDotProcessing: {
+    backgroundColor: '#3b82f6',
+  },
+  liveBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1e293b',
+    maxWidth: 280,
+  },
+  settingsIconBtn: {
+    padding: 2,
+    marginLeft: 4,
   },
   pageNavContainer: {
     flexDirection: 'row',
